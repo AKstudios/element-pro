@@ -8327,11 +8327,11 @@ Thermistor</text>
 <approved hash="106,1,-55.88,45.72,AIN1,,,,,"/>
 <approved hash="113,1,176.53,-81.6017,RX,,,,,"/>
 <approved hash="113,1,168.91,-84.1417,TX,,,,,"/>
-<approved hash="113,1,276.183,28.2296,J1,,,,,"/>
-<approved hash="113,1,276.183,7.90956,J2,,,,,"/>
+<approved hash="113,1,276.183,28.1991,J1,,,,,"/>
+<approved hash="113,1,276.183,7.87908,J2,,,,,"/>
 <approved hash="113,1,-10.16,54.2671,FB3,,,,,"/>
 <approved hash="113,1,-10.16,26.3271,FB4,,,,,"/>
-<approved hash="113,1,41.3173,55.5904,J5,,,,,"/>
+<approved hash="113,1,41.3173,55.6209,J5,,,,,"/>
 </errors>
 </schematic>
 </drawing>
