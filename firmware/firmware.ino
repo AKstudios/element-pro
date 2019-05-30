@@ -1,66 +1,53 @@
-// v0.5.7 - 10/19/2017
+// Element Pro Firmware v0.1
+// Modified: 05/01/2019
 // Developed by Akram Ali
+// github.com/akstudios
 
-// www.crtlabs.org
-
-#include <RFM69.h>  //  https://github.com/LowPowerLab/RFM69
 #include <SPI.h>
 #include <Arduino.h>
 #include <Wire.h>
-#include <CCS811.h> // https://github.com/AKstudios/CCS811-library
-//#include <Adafruit_SHT31.h> //https://github.com/adafruit/Adafruit_SHT31
-#include <Adafruit_Si7021.h> // https://github.com/adafruit/Adafruit_Si7021
-#include <Adafruit_BMP280.h> // https://github.com/adafruit/Adafruit_BMP280_Library
-#include <Adafruit_Sensor.h>  // https://github.com/adafruit/Adafruit_Sensor
-#include <Adafruit_TSL2591.h> // https://github.com/adafruit/Adafruit_TSL2591_Library
-#include <Adafruit_NeoPixel.h> // https://github.com/adafruit/Adafruit_NeoPixel
+#include <RFM69.h>              // https://github.com/LowPowerLab/RFM69
+#include <Adafruit_ADS1015.h>   // https://github.com/adafruit/Adafruit_ADS1X15
+#include <Adafruit_SGP30.h>     // https://github.com/adafruit/Adafruit_SGP30
+#include <Adafruit_SHT31.h>     // https://github.com/adafruit/Adafruit_SHT31
+#include <Adafruit_BMP3XX.h>    // https://github.com/adafruit/Adafruit_BMP3XX
+#include <Adafruit_Sensor.h>    // https://github.com/adafruit/Adafruit_Sensor
+#include <Adafruit_TSL2591.h>   // https://github.com/adafruit/Adafruit_TSL2591_Library
+#include <Adafruit_NeoPixel.h>  // https://github.com/adafruit/Adafruit_NeoPixel
 #include <SoftwareSerial.h>
 #include <avr/sleep.h>
 #include <avr/wdt.h>
-#include "config.h"
 
 // define node parameters
-//char node[] = "25";
-//#define NODEID        25 // same sa above - must be unique for each node on same network (range up to 254, 255 is used for broadcast)
+#define NODEID        109
 #define GATEWAYID     1
-#define NETWORKID     101
+#define NETWORKID     1
 #define FREQUENCY     RF69_915MHZ //Match this with the version of your Moteino! (others: RF69_433MHZ, RF69_868MHZ)
+#define ENCRYPTKEY    "Tt-Mh=SQ#dn#JY3_" //has to be same 16 characters/bytes on all nodes, not more not less!
 #define IS_RFM69HW    //uncomment only for RFM69HW! Leave out if you have RFM69W!
-//#define LED           9 // led pin
 #define PIN           6 // NeoPixel driver pin
 
 // define objects
 RFM69 radio;
-Adafruit_BMP280 bme; // I2C
-//Adafruit_SHT31 sht31 = Adafruit_SHT31();
-Adafruit_Si7021 sensor = Adafruit_Si7021();
+Adafruit_SHT31 sht31 = Adafruit_SHT31();
+Adafruit_SGP30 sgp;
 Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591); // pass in a number for the sensor identifier (for your use later)
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, PIN, NEO_GRB + NEO_KHZ800);  // number of pixels, digital pin, pixel flags
-
-/*
-// define IAQ core global variables
-#define iaqaddress 0x5A
-uint16_t co2;
-uint8_t statu;
-int32_t resistance;
-uint16_t tvoc;
-*/
-
-// define CCS811 global variables
-#define ADDR      0x5B
-#define WAKE_PIN  5
-CCS811 ccs811_sensor;
-uint16_t tvoc;
-
-// define MH-z19 global variables
-SoftwareSerial mySerial(8, 7); // RX, TX
-byte cmd[9] = {0xFF,0x01,0x86,0x00,0x00,0x00,0x00,0x00,0x79};
-unsigned char response[18]; // expect a 9 bytes response, give twice the size just in case things go crazy, it reduces likelyhood of crash/buffer overrun
+Adafruit_ADS1115 ads;
+Adafruit_BMP3XX bmp;
 
 // define PMS7003 global variables
-SoftwareSerial mySerial2(A1, 4); // RX, TX
+//SoftwareSerial mySerial2(A1, 4); // RX, TX
 char buf[31];
 long CF1PM01Value,CF1PM25Value,CF1PM10Value,atmPM01Value,atmPM25Value,atmPM10Value,Partcount0_3,Partcount0_5,Partcount1_0,Partcount2_5,Partcount5_0,Partcount10;
+
+// define S8 CO2 global variables
+SoftwareSerial K_30_Serial(7,8);  //Sets up a virtual serial port
+                                    //Using pin 12 for Rx and pin 13 for Tx
+byte readCO2[] = {0xFE, 0X44, 0X00, 0X08, 0X02, 0X9F, 0X25};  //Command packet to read Co2 (see app note)
+byte response[] = {0,0,0,0,0,0,0};  //create an array to store the response
+//multiplier for value. default is 1. set to 3 for K-30 3% and 10 for K-33 ICB
+int valMultiplier = 1;
 
 // define other global variables
 long lux;
@@ -68,6 +55,9 @@ float bar;
 float sound;
 int ppm, _ppm;
 float co2;
+uint16_t tvoc;
+float adc16;
+#define SEALEVELPRESSURE_HPA (1013.25)
 
 char dataPacket[150];
 
@@ -102,14 +92,19 @@ void setup()
   //pinMode(3, INPUT);
   attachInterrupt(1, ISR_button, FALLING);  // enable hardware interrupt on pin 3 when pin goes from HIGH to LOW
 
-  ccs811_sensor.begin(uint8_t(ADDR), uint8_t(WAKE_PIN));  // initialize CCS811 sensor
+  K_30_Serial.begin(9600);
+  ads.begin();
+  ads.setGain(GAIN_ONE);
+  sgp.begin();
+  bmp.begin();
+  bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
+  bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
+  bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+  //mySerial2.begin(9600);   // initialize PMS7003 in UART mode
 
-  mySerial.begin(9600);   // initialize MHz-19 in UART mode
-  mySerial2.begin(9600);   // initialize PMS7003 in UART mode
-
-  while(mySerial2.available() > 0)  // clear out buffer
-    char x = mySerial2.read();
-  delay(1);
+//  while(mySerial2.available() > 0)  // clear out buffer
+//    char x = mySerial2.read();
+//  delay(1);
 
   radio.initialize(FREQUENCY,NODEID,NETWORKID);
 #ifdef IS_RFM69HW
@@ -121,19 +116,6 @@ void setup()
 
   strip.begin(); // initialize neo pixels
   strip.show(); // Initialize all pixels to 'off'
-
-  // get first CO2 reading
-  while(mySerial.available() > 0)  // clear out buffer
-    char x = mySerial.read();
-  mySerial.write(cmd,9);
-  delay(1);
-  if(mySerial.available() > 0 && (unsigned char)mySerial.peek() != 0xFF)
-    mySerial.read();
-  mySerial.readBytes(response, 9);
-  unsigned int responseHigh = (unsigned int) response[2];
-  unsigned int responseLow = (unsigned int) response[3];
-  ppm = (256 * responseHigh) + responseLow;
-  _ppm = ppm;
 
   Serial.println("Ready");
   delay(10);
@@ -202,20 +184,17 @@ void loop()
 
 void readSensors()
 {
-  /*
   // T/RH - SHT31
   sht31.begin(0x44);
   float temp = sht31.readTemperature();
   float rh = sht31.readHumidity();
-  */
+  temp = temp - 1.5;
+  rh = rh + 5.0;
 
-  // T/RH - Si7021
-  sensor.begin();
-  float temp = sensor.readTemperature();
-  temp = temp - 2;
-  float rh = sensor.readHumidity();
-  rh = rh + 5;
-
+  // ADS1115 16-bit ADC
+  adc16 = samples(0);   // get avg ADC value from channel 0 
+  float R = resistance(adc16, 10000); // Replace 10,000 ohm with the actual resistance of the resistor measured using a multimeter (e.g. 9880 ohm)
+  float etemp = steinhart(R);  // get temperature from thermistor using the custom Steinhart-hart equation by US sensors
 
   // Light Intensity - TSL2591
   tsl.begin();
@@ -231,93 +210,43 @@ void readSensors()
   {
     lux = event.light;
   }
+  //S8 CO2
+  sendRequest(readCO2);
+  co2 = getValue(response);
+  // BMP388 air pressure sensor
+  bmp.performReading();
+  bar = bmp.pressure / 100.0;
 
-  /*
-  // IAQ core
-  Wire.requestFrom(iaqaddress, 9);
-  co2 = (Wire.read()<< 8 | Wire.read());
-  statu = Wire.read();
-  resistance = (Wire.read()& 0x00)| (Wire.read()<<16)| (Wire.read()<<8| Wire.read());
-  tvoc = (Wire.read()<<8 | Wire.read());
-  */
+  // SGP30 VOC readings
+  sgp.IAQmeasure();
+  tvoc = sgp.TVOC;
 
-  // MH-z19 UART
-  mySerial.listen();
-  delay(1);
-  while(mySerial.available() > 0)  // clear out buffer
-    char x = mySerial.read();
-  mySerial.write(cmd,9);
-  delay(1);
-  if(mySerial.available() > 0 && (unsigned char)mySerial.peek() != 0xFF)
-    mySerial.read();
-  mySerial.readBytes(response, 9);
-  unsigned int responseHigh = (unsigned int) response[2];
-  unsigned int responseLow = (unsigned int) response[3];
-  ppm = (256 * responseHigh) + responseLow;
-  co2 = (0.7*ppm) + (0.3*_ppm);  // real-time exponential smoothing of data with a damping factor of 0.3
-  _ppm = (int)co2;  // save old reading;
-
-  /*
-  // ADMP401 mic for sound level
-  float sumADC=0.0;
-  for(int i=0;i<5;i++)
-  {
-     sumADC = sumADC + analogRead(A0); // take avg of 5 readings
-  }
-  float averageADC = sumADC/5.0;
-  float volts = (averageADC/1023.0 * 3.3);
-  sound = (20 * log10(volts/0.007943)) - 42 + 94 - 60;  // VRMS = 0.007943; -42dB is sensitivity of ADMP401 mic; 1 Pa = 94 dB SPL RMS; 60dB is gain of amplifier
-  // the above is uncalibrated sound level - needs to be calibrated with reference to an accurate sound level meter in varying SPLs, frequencies and environments.
-  //sound = averageADC;
-  */
-
-  // Sound levels using electret mic
-  float sumADC=0.0;
-  for(int i=0;i<2;i++)
-  {
-     sumADC = sumADC + analogRead(A0); // take avg of 2 readings
-  }
-  float averageADC = sumADC/2.0;
-  sound = 52.864 * (exp(0.0011 * averageADC));  // roughly calibrated sound levels (in dB) in a typical office environment using a reference sound level meter (SLM01)
-
-
-  // BMP280 air pressure sensor
-  bme.begin();
-  float bar = bme.readPressure();
-  bar = bar / 3386.39;  // convert pressure in Pa to inches of Mercury
-
-
-  // CCS811 VOC readings
-  ccs811_sensor.compensate(temp, rh);  // environmental compensation for current temperature and humidity
-  ccs811_sensor.getData();
-  tvoc = ccs811_sensor.readTVOC();
-
-
-  // PMS7003
-  char response[10];
-  long pm;
-  //while(mySerial2.available() > 0)  // clear out buffer
-  //  char x = mySerial2.read();
-  delay(1);
-  mySerial2.listen();
-  delay(1);
-  //if(mySerial2.available()>0)
-  //  mySerial2.read();
-  //mySerial2.readBytes(buf, 31);
-  if (mySerial2.find(0x42))
-  {
-      mySerial2.readBytes(buf, 31);
-      get_data(buf);
-  }
-  delay(1);
-  //get_data(buf);
-  //Serial.println(buf);
-  //Serial.println(atmPM01Value);
-  pm = atmPM01Value;
+//  // PMS7003
+//  char response[10];
+//  long pm;
+//  //while(mySerial2.available() > 0)  // clear out buffer
+//  //  char x = mySerial2.read();
+//  delay(1);
+//  mySerial2.listen();
+//  delay(1);
+//  //if(mySerial2.available()>0)
+//  //  mySerial2.read();
+//  //mySerial2.readBytes(buf, 31);
+//  if (mySerial2.find(0x42))
+//  {
+//      mySerial2.readBytes(buf, 31);
+//      get_data(buf);
+//  }
+//  delay(1);
+//  //get_data(buf);
+//  //Serial.println(buf);
+//  //Serial.println(atmPM01Value);
+//  pm = atmPM01Value;
 
 
   // define character arrays for all variables
   char _i[3];
+  char _a[7];
   char _t[7];
   char _h[7];
   char _c[7];
@@ -327,18 +256,18 @@ void readSensors()
   char _n[7];
   char _s[7];
   char _v[7];
-  char _p[7];
+  //char _p[7];
 
   // convert all flaoting point and integer variables into character arrays
   dtostrf(NODEID, 1, 0, _i);
   dtostrf(temp, 3, 2, _t);  // this function converts float into char array. 3 is minimum width, 2 is decimal precision
+  dtostrf(etemp, 3, 2, _a);
   dtostrf(rh, 3, 2, _h);
   dtostrf(co2, 3, 0, _c);
   dtostrf(bar, 3, 2, _g);
   dtostrf(lux, 1, 0, _l);
-  dtostrf(sound, 1, 1, _s);
   dtostrf(tvoc, 1, 0, _v);
-  dtostrf(pm, 1, 0, _p);
+  //dtostrf(pm, 1, 0, _p);
   delay(50);
 
   dataPacket[0] = 0;  // first value of dataPacket should be a 0
@@ -356,10 +285,8 @@ void readSensors()
   strcat(dataPacket, _g);
   strcat(dataPacket, ",l:");
   strcat(dataPacket, _l);
-  strcat(dataPacket, ",s:");
-  strcat(dataPacket, _s);
-  strcat(dataPacket, ",p:");
-  strcat(dataPacket, _p);
+  //strcat(dataPacket, ",p:");
+  //strcat(dataPacket, _p);
   strcat(dataPacket, ",v:");
   strcat(dataPacket, _v);
   delay(50);
@@ -394,6 +321,87 @@ void get_data(unsigned char b[])
     Partcount10 = (b[25] << 8) + b[26]; //count particules > 10.0 µm
   }
 }
+
+
+// Perform multiple iterations to get higher accuracy ADC values (reduce noise) ******************************************
+float samples(int pin)
+{
+  float n=5.0;  // number of iterations to perform
+  float sum=0.0;  //store sum as a 32-bit number
+  for(int i=0;i<n;i++)
+  {
+    //float value = analogRead(pin);
+    float value = ads.readADC_SingleEnded(pin);
+    sum = sum + value;
+    delay(1); // makes readings slower - probably don't need this delay, but ¯\_(ツ)_/¯
+  }
+  float average = sum/n;   //store average as a 32-bit number with decimal accuracy
+  return average;
+}
+
+
+// Get resistance ****************************************************************
+float resistance(float adc, int true_R)
+{
+  //float R = true_R/(1023.0/adc-1.0);   // convert 10-bit reading into resistance
+  float ADCvalue = adc*(8.192/3.3);  // Vcc = 8.192 on GAIN_ONE setting, Arduino Vcc = 3.3V in this case
+  float R = 10000/(65535/ADCvalue-1);  // 65535 refers to 16-bit number
+  return R;
+}
+
+// Get temperature from Steinhart equation (US sensors thermistor, 10K, B = 3892) *****************************************
+float steinhart(float R)
+{
+  float A = 0.00113929600457259;
+  float B = 0.000231949467390149;
+  float C = 0.000000105992476218967;
+  float D = -0.0000000000667898975192618;
+  float E = log(R);
+  
+  float T = 1/(A + (B*E) + (C*(E*E*E)) + (D*(E*E*E*E*E)));
+  delay(50);
+  return T-273.15;
+}
+
+
+void sendRequest(byte packet[])
+{
+  while(!K_30_Serial.available())  //keep sending request until we start to get a response
+  {
+    K_30_Serial.write(readCO2,7);
+    delay(50);
+  }
+  
+  int timeout=0;  //set a timeoute counter
+  while(K_30_Serial.available() < 7 ) //Wait to get a 7 byte response
+  {
+    timeout++;  
+    if(timeout > 10)    //if it takes to long there was probably an error
+      {
+        while(K_30_Serial.available())  //flush whatever we have
+          K_30_Serial.read();
+          
+          break;                        //exit and try again
+      }
+      delay(50);
+  }
+  
+  for (int i=0; i < 7; i++)
+  {
+    response[i] = K_30_Serial.read();
+  }  
+}
+
+unsigned long getValue(byte packet[])
+{
+    int high = packet[3];                        //high byte for value is 4th byte in packet in the packet
+    int low = packet[4];                         //low byte for value is 5th byte in the packet
+
+  
+    unsigned long val = high*256 + low;                //Combine high byte and low byte with this formula to get value
+    return val* valMultiplier;
+}
+
 
 /*
 void fadeLED()
