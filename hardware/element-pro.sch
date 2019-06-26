@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE eagle SYSTEM "eagle.dtd">
-<eagle version="9.4.1">
+<eagle version="9.1.1">
 <drawing>
 <settings>
 <setting alwaysvectorfont="no"/>
@@ -7480,12 +7480,11 @@ BKH1005LM152-T - 1.5K Ohm, 200mA Ferrite Chip - Digikey: 587-3216-1-ND&lt;/li&gt
 Relative Humidity</text>
 <text x="-60.96" y="129.54" size="2.54" layer="94" font="vector">TagConnect ISP headers</text>
 <text x="241.3" y="-25.4" size="2.54" layer="94" font="vector">3.3V voltage regulator</text>
-<text x="248.412" y="-82.296" size="5.08" layer="94" font="vector" ratio="20">ArchSense</text>
-<text x="248.666" y="-74.422" size="2.54" layer="94" font="vector" ratio="10">Element Pro</text>
+<text x="245.872" y="-79.756" size="5.08" layer="94" font="vector" ratio="20">Element Pro</text>
 <text x="257.302" y="-112.522" size="2.54" layer="94" font="vector" ratio="10">Akram Ali</text>
 <text x="134.62" y="-30.48" size="2.54" layer="94" font="vector">USB + FTDI</text>
-<text x="257.556" y="-102.362" size="2.54" layer="94" font="vector" ratio="10">0.2</text>
-<text x="248.666" y="-87.122" size="2.54" layer="94" font="vector" ratio="10">github.com/akstudios</text>
+<text x="257.556" y="-102.362" size="2.54" layer="94" font="vector" ratio="10">0.3</text>
+<text x="246.126" y="-84.582" size="2.54" layer="94" font="vector" ratio="10">github.com/akstudios</text>
 <text x="160.02" y="101.6" size="1.778" layer="97" font="vector">0x29</text>
 <text x="208.28" y="76.2" size="2.54" layer="94" font="vector">RGB LED</text>
 <text x="238.76" y="25.4" size="2.54" layer="94" font="vector">I2C Headers</text>
