@@ -1,5 +1,6 @@
-// Element Pro Firmware v0.1
-// Modified: 05/01/2019
+// Element Pro Firmware v0.2
+// Modified: 06/26/2019
+
 // Developed by Akram Ali
 // github.com/akstudios
 
@@ -7,6 +8,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <RFM69.h>              // https://github.com/LowPowerLab/RFM69
+#include <SPIFlash.h>           // https://github.com/lowpowerlab/spiflash
 #include <Adafruit_ADS1015.h>   // https://github.com/adafruit/Adafruit_ADS1X15
 #include <Adafruit_SGP30.h>     // https://github.com/adafruit/Adafruit_SGP30
 #include <Adafruit_SHT31.h>     // https://github.com/adafruit/Adafruit_SHT31
@@ -19,16 +21,19 @@
 #include <avr/wdt.h>
 
 // define node parameters
-#define NODEID        109
+//#define NODEID        109
+uint16_t NODEID =            999; // same as above, but supports 10bit addresses (up to 1023 node IDs)
 #define GATEWAYID     1
 #define NETWORKID     1
 #define FREQUENCY     RF69_915MHZ //Match this with the version of your Moteino! (others: RF69_433MHZ, RF69_868MHZ)
 #define ENCRYPTKEY    "Tt-Mh=SQ#dn#JY3_" //has to be same 16 characters/bytes on all nodes, not more not less!
 #define IS_RFM69HW    //uncomment only for RFM69HW! Leave out if you have RFM69W!
 #define PIN           6 // NeoPixel driver pin
+#define FLASH_SS      5 // and FLASH SS on D5
 
 // define objects
 RFM69 radio;
+SPIFlash flash(FLASH_SS, 0xEF30); //EF30 for 4mbit  Windbond chip (W25X40CL)
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
 Adafruit_SGP30 sgp;
 Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591); // pass in a number for the sensor identifier (for your use later)
@@ -37,7 +42,7 @@ Adafruit_ADS1115 ads;
 Adafruit_BMP3XX bmp;
 
 // define PMS7003 global variables
-//SoftwareSerial mySerial2(A1, 4); // RX, TX
+//SoftwareSerial mySerial2(A1, 9); // RX, TX
 char buf[31];
 long CF1PM01Value,CF1PM25Value,CF1PM10Value,atmPM01Value,atmPM25Value,atmPM10Value,Partcount0_3,Partcount0_5,Partcount1_0,Partcount2_5,Partcount5_0,Partcount10;
 
@@ -92,6 +97,7 @@ void setup()
   //pinMode(3, INPUT);
   attachInterrupt(1, ISR_button, FALLING);  // enable hardware interrupt on pin 3 when pin goes from HIGH to LOW
 
+  flash.initialize();
   K_30_Serial.begin(9600);
   ads.begin();
   ads.setGain(GAIN_ONE);
@@ -126,6 +132,7 @@ void sleep()
 {
   Serial.flush(); // empty the send buffer, before continue with; going to sleep
 
+  flash.sleep();
   radio.sleep();
 
   cli();          // stop interrupts
@@ -166,8 +173,8 @@ void loop()
   radio.sendWithRetry(GATEWAYID, dataPacket, strlen(dataPacket), 5, 100);  // send data, retry 5 times with delay of 100ms between each retry
   dataPacket[0] = (char)0; // clearing first byte of char array clears the array
 
-  //colorWipe(strip.Color(0, 255, 0), 10); // Green
-  //strip.show();
+  colorWipe(strip.Color(0, 255, 0), 10); // Green
+  strip.show();
 
   for (int i = 0; i <= 255; i++)
   {
@@ -210,9 +217,11 @@ void readSensors()
   {
     lux = event.light;
   }
+  
   //S8 CO2
   sendRequest(readCO2);
   co2 = getValue(response);
+  
   // BMP388 air pressure sensor
   bmp.performReading();
   bar = bmp.pressure / 100.0;
@@ -220,18 +229,18 @@ void readSensors()
   // SGP30 VOC readings
   sgp.IAQmeasure();
   tvoc = sgp.TVOC;
-
+//
 //  // PMS7003
 //  char response[10];
 //  long pm;
-//  //while(mySerial2.available() > 0)  // clear out buffer
-//  //  char x = mySerial2.read();
-//  delay(1);
+////  while(mySerial2.available() > 0)  // clear out buffer
+////    char x = mySerial2.read();
+////  delay(1);
 //  mySerial2.listen();
 //  delay(1);
-//  //if(mySerial2.available()>0)
-//  //  mySerial2.read();
-//  //mySerial2.readBytes(buf, 31);
+//  if(mySerial2.available()>0)
+//    mySerial2.read();
+//  mySerial2.readBytes(buf, 31);
 //  if (mySerial2.find(0x42))
 //  {
 //      mySerial2.readBytes(buf, 31);
