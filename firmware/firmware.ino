@@ -118,8 +118,6 @@ void setup()
 #endif
   radio.encrypt(ENCRYPTKEY);
 
-  //pinMode(9, OUTPUT);  // pin 9 controls LED
-
   strip.begin(); // initialize neo pixels
   strip.show(); // Initialize all pixels to 'off'
 
@@ -193,15 +191,19 @@ void readSensors()
 {
   // T/RH - SHT31
   sht31.begin(0x44);
-  float temp = sht31.readTemperature();
+  //float temp = sht31.readTemperature();
   float rh = sht31.readHumidity();
-  temp = temp - 1.5;
+  //temp = temp - 1.5;
   rh = rh + 5.0;
 
   // ADS1115 16-bit ADC
   adc16 = samples(0);   // get avg ADC value from channel 0 
   float R = resistance(adc16, 10000); // Replace 10,000 ohm with the actual resistance of the resistor measured using a multimeter (e.g. 9880 ohm)
-  float etemp = steinhart(R);  // get temperature from thermistor using the custom Steinhart-hart equation by US sensors
+  float temp = steinhart(R);  // get temperature from thermistor using the custom Steinhart-hart equation by US sensors
+
+  adc16 = samples(3);   // get avg ADC value from channel 3 
+  float R2 = resistance(adc16, 10000); // Replace 10,000 ohm with the actual resistance of the resistor measured using a multimeter (e.g. 9880 ohm)
+  float etemp = steinhart2(R2);  // get temperature from thermistor using the Steinhart-hart equation for Adafruit's 10K epoxy thermistor
 
   // Light Intensity - TSL2591
   tsl.begin();
@@ -294,6 +296,8 @@ void readSensors()
   strcat(dataPacket, _g);
   strcat(dataPacket, ",l:");
   strcat(dataPacket, _l);
+  strcat(dataPacket, ",a:");
+  strcat(dataPacket, _a);
   //strcat(dataPacket, ",p:");
   //strcat(dataPacket, _p);
   strcat(dataPacket, ",v:");
@@ -368,17 +372,32 @@ float steinhart(float R)
   float E = log(R);
   
   float T = 1/(A + (B*E) + (C*(E*E*E)) + (D*(E*E*E*E*E)));
-  delay(50);
+  
   return T-273.15;
 }
+// Get temperature from Steinhart equation (US sensors thermistor, 10K, B = 3892) *****************************************
+float steinhart2(float R)
+{
+  float st;
+  st = R / 10000;
+  st = log(st);                  
+  st /= 3950;                   
+  st += 1.0 / (25 + 273.15);
+  st = 1.0 / st;        
+  st -= 273.15;
 
+  return st;
+}
 
+  
+
+// Get CO2 reading from S8 sensor ****************************************************************
 void sendRequest(byte packet[])
 {
   while(!K_30_Serial.available())  //keep sending request until we start to get a response
   {
     K_30_Serial.write(readCO2,7);
-    delay(50);
+    delay(10);
   }
   
   int timeout=0;  //set a timeoute counter
@@ -392,7 +411,7 @@ void sendRequest(byte packet[])
           
           break;                        //exit and try again
       }
-      delay(50);
+      delay(10);
   }
   
   for (int i=0; i < 7; i++)
@@ -412,33 +431,8 @@ unsigned long getValue(byte packet[])
 }
 
 
-/*
-void fadeLED()
-{
-  int brightness = 0;
-  int fadeAmount = 5;
-  for(int i=0; i<510; i=i+5)  // 255 is max analog value, 255 * 2 = 510
-  {
-    analogWrite(9, brightness);  // pin 9 is LED
 
-    // change the brightness for next time through the loop:
-    brightness = brightness + fadeAmount;  // increment brightness level by 5 each time (0 is lowest, 255 is highest)
-
-    // reverse the direction of the fading at the ends of the fade:
-    if (brightness <= 0 || brightness >= 255)
-    {
-      fadeAmount = -fadeAmount;
-    }
-    // wait for 20-30 milliseconds to see the dimming effect
-    delay(10);
-  }
-  digitalWrite(9, LOW); // switch LED off at the end of fade
-}
-*/
-
-
-
-// Fill the dots one after the other with a color
+// Fill the dots one after the other with a color***********************************************
 void colorWipe(uint32_t c, uint8_t wait) {
   for(uint16_t i=0; i<strip.numPixels(); i++) {
     strip.setPixelColor(i, c);
