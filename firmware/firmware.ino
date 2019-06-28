@@ -1,5 +1,5 @@
-// Element Pro Firmware v0.2
-// Modified: 06/26/2019
+// Element Pro Firmware v0.3
+// Modified: 06/28/2019
 
 // Developed by Akram Ali
 // github.com/akstudios
@@ -21,8 +21,8 @@
 #include <avr/wdt.h>
 
 // define node parameters
-//#define NODEID        109
-uint16_t NODEID =            999; // same as above, but supports 10bit addresses (up to 1023 node IDs)
+//#define NODEID      109
+uint16_t NODEID =     999; // same as above, but supports 10bit addresses (up to 1023 node IDs)
 #define GATEWAYID     1
 #define NETWORKID     1
 #define FREQUENCY     RF69_915MHZ //Match this with the version of your Moteino! (others: RF69_433MHZ, RF69_868MHZ)
@@ -30,6 +30,7 @@ uint16_t NODEID =            999; // same as above, but supports 10bit addresses
 #define IS_RFM69HW    //uncomment only for RFM69HW! Leave out if you have RFM69W!
 #define PIN           6 // NeoPixel driver pin
 #define FLASH_SS      5 // and FLASH SS on D5
+#define PM_SET        9 // controls PMS7003 fan + sensor power
 
 // define objects
 RFM69 radio;
@@ -42,12 +43,12 @@ Adafruit_ADS1115 ads;
 Adafruit_BMP3XX bmp;
 
 // define PMS7003 global variables
-//SoftwareSerial mySerial2(A1, 9); // RX, TX
+SoftwareSerial pm_serial(A1, 9); // RX, TX
 char buf[31];
 long CF1PM01Value,CF1PM25Value,CF1PM10Value,atmPM01Value,atmPM25Value,atmPM10Value,Partcount0_3,Partcount0_5,Partcount1_0,Partcount2_5,Partcount5_0,Partcount10;
 
 // define S8 CO2 global variables
-SoftwareSerial K_30_Serial(7,8);  //Sets up a virtual serial port
+SoftwareSerial co2_serial(7,8);  //Sets up a virtual serial port
                                     //Using pin 12 for Rx and pin 13 for Tx
 byte readCO2[] = {0xFE, 0X44, 0X00, 0X08, 0X02, 0X9F, 0X25};  //Command packet to read Co2 (see app note)
 byte response[] = {0,0,0,0,0,0,0};  //create an array to store the response
@@ -62,6 +63,8 @@ int ppm, _ppm;
 float co2;
 uint16_t tvoc;
 float adc16;
+adsGain_t gain[6] = {GAIN_TWOTHIRDS, GAIN_ONE, GAIN_TWO, GAIN_FOUR, GAIN_EIGHT, GAIN_SIXTEEN};  // create an array of type adsGain_t, which is a struct in the Adafruit_ADS1015.h library
+int gn = 5;      // set gain to 16x to begin with
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 char dataPacket[150];
@@ -95,18 +98,21 @@ void setup()
   Serial.println("Setup");
 
   //pinMode(3, INPUT);
+  pinMode(PM_SET, OUTPUT);
+  digitalWrite(PM_SET, HIGH);
   attachInterrupt(1, ISR_button, FALLING);  // enable hardware interrupt on pin 3 when pin goes from HIGH to LOW
 
   flash.initialize();
-  K_30_Serial.begin(9600);
+  co2_serial.begin(9600);
   ads.begin();
-  ads.setGain(GAIN_ONE);
+  ads.setGain(gain[gn]);
   sgp.begin();
   bmp.begin();
   bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_8X);
   bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
   bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
-  //mySerial2.begin(9600);   // initialize PMS7003 in UART mode
+  pm_serial.begin(9600);   // initialize PMS7003 in UART mode
+  digitalWrite(PM_SET, LOW);  // turn PM sensor off
 
 //  while(mySerial2.available() > 0)  // clear out buffer
 //    char x = mySerial2.read();
@@ -191,20 +197,21 @@ void readSensors()
 {
   // T/RH - SHT31
   sht31.begin(0x44);
-  //float temp = sht31.readTemperature();
-  float rh = sht31.readHumidity();
+  float temp = sht31.readTemperature();
+  float rh = sht31.readHumidity();  // taking temp reading is important for rh reading
   //temp = temp - 1.5;
-  rh = rh + 5.0;
+  //rh = rh + 5.0;
 
   // ADS1115 16-bit ADC
+  ads.setGain(gain[1]);  // this is only for temperature sensor
   adc16 = samples(0);   // get avg ADC value from channel 0 
   float R = resistance(adc16, 10000); // Replace 10,000 ohm with the actual resistance of the resistor measured using a multimeter (e.g. 9880 ohm)
-  float temp = steinhart(R);  // get temperature from thermistor using the custom Steinhart-hart equation by US sensors
+  temp = steinhart(R);  // get temperature from thermistor using the custom Steinhart-hart equation by US sensors
 
-  adc16 = samples(3);   // get avg ADC value from channel 3 
-  float R2 = resistance(adc16, 10000); // Replace 10,000 ohm with the actual resistance of the resistor measured using a multimeter (e.g. 9880 ohm)
-  float etemp = steinhart2(R2);  // get temperature from thermistor using the Steinhart-hart equation for Adafruit's 10K epoxy thermistor
-
+  // external voltage - 10K-10K voltage divider
+  adc16 = ads_autogain(3);   // get avg ADC value from channel 3 
+  float volt = voltage(adc16, gn);  // convert ADC value to a voltage reading based on the gain
+  
   // Light Intensity - TSL2591
   tsl.begin();
   tsl.setGain(TSL2591_GAIN_MED);      // 25x gain
@@ -221,8 +228,7 @@ void readSensors()
   }
   
   //S8 CO2
-  sendRequest(readCO2);
-  co2 = getValue(response);
+  co2 = getCO2(readCO2);
   
   // BMP388 air pressure sensor
   bmp.performReading();
@@ -231,33 +237,28 @@ void readSensors()
   // SGP30 VOC readings
   sgp.IAQmeasure();
   tvoc = sgp.TVOC;
-//
-//  // PMS7003
-//  char response[10];
-//  long pm;
-////  while(mySerial2.available() > 0)  // clear out buffer
-////    char x = mySerial2.read();
-////  delay(1);
-//  mySerial2.listen();
-//  delay(1);
-//  if(mySerial2.available()>0)
-//    mySerial2.read();
-//  mySerial2.readBytes(buf, 31);
-//  if (mySerial2.find(0x42))
-//  {
-//      mySerial2.readBytes(buf, 31);
-//      get_data(buf);
-//  }
-//  delay(1);
-//  //get_data(buf);
-//  //Serial.println(buf);
-//  //Serial.println(atmPM01Value);
-//  pm = atmPM01Value;
+
+  // PMS7003
+  digitalWrite(PM_SET, HIGH); // turn PM sensor on
+  delay(2000);  // wait a few seconds for air to flow through PM sensor
+  long pm;
+  pm_serial.listen();
+  delay(1);
+  if(pm_serial.available()>0)
+    pm_serial.read();
+  pm_serial.readBytes(buf, 31);
+  if (pm_serial.find(0x42))
+  {
+      pm_serial.readBytes(buf, 31);
+      get_pm_data(buf);
+  }
+  delay(1);
+  pm = atmPM25Value;
+  digitalWrite(PM_SET, LOW);  // turn PM sensor off
 
 
   // define character arrays for all variables
   char _i[3];
-  char _a[7];
   char _t[7];
   char _h[7];
   char _c[7];
@@ -267,18 +268,19 @@ void readSensors()
   char _n[7];
   char _s[7];
   char _v[7];
-  //char _p[7];
+  char _z[7];
+  char _p[7];
 
   // convert all flaoting point and integer variables into character arrays
   dtostrf(NODEID, 1, 0, _i);
   dtostrf(temp, 3, 2, _t);  // this function converts float into char array. 3 is minimum width, 2 is decimal precision
-  dtostrf(etemp, 3, 2, _a);
   dtostrf(rh, 3, 2, _h);
-  dtostrf(co2, 3, 0, _c);
+  dtostrf(co2, 1, 0, _c);
   dtostrf(bar, 3, 2, _g);
   dtostrf(lux, 1, 0, _l);
   dtostrf(tvoc, 1, 0, _v);
-  //dtostrf(pm, 1, 0, _p);
+  dtostrf(volt, 3, 2, _z);
+  dtostrf(pm, 1, 0, _p);
   delay(50);
 
   dataPacket[0] = 0;  // first value of dataPacket should be a 0
@@ -296,17 +298,17 @@ void readSensors()
   strcat(dataPacket, _g);
   strcat(dataPacket, ",l:");
   strcat(dataPacket, _l);
-  strcat(dataPacket, ",a:");
-  strcat(dataPacket, _a);
-  //strcat(dataPacket, ",p:");
-  //strcat(dataPacket, _p);
+  strcat(dataPacket, ",p:");
+  strcat(dataPacket, _p);
+  strcat(dataPacket, ",z:");
+  strcat(dataPacket, _z);
   strcat(dataPacket, ",v:");
   strcat(dataPacket, _v);
   delay(50);
 }
 
 
-void get_data(unsigned char b[])
+void get_pm_data(unsigned char b[])
 {
   int receiveSum = 0;
   for (int i = 0; i < (31 - 2); i++)
@@ -335,6 +337,36 @@ void get_data(unsigned char b[])
   }
 }
 
+float ads_autogain(int pin)
+{
+  float adc=0.0;
+  int timeout = 1000;
+  long t1 = millis();
+  while(1) // this function constantly adjusts the gain to an optimum level
+  {
+    long t2 = millis();
+    adc = samples(pin);   // get avg ADC value from channel pin
+
+    if(adc >= 30000 && gn > 0)  // if ADC is getting pegged at maximum value and is not the widest voltage range already, reduce the gain
+    {
+      gn--;
+      ads.setGain(gain[gn]);
+    }
+    else if(adc <= 5000 && gn < 5)  // if ADC is reading very low values and is not the lowest voltage range already, increase the gain
+    {
+      gn++;
+      ads.setGain(gain[gn]);
+    }
+    else
+      break;
+
+    if(abs(t2-t1) > timeout)   // if nothing is connected, it'll be stuck in while forever, so this is precaution
+      break;
+  }
+  adc = samples(pin);   // get final avg ADC value from channel pin
+  return adc;
+}
+
 
 // Perform multiple iterations to get higher accuracy ADC values (reduce noise) ******************************************
 float samples(int pin)
@@ -343,7 +375,6 @@ float samples(int pin)
   float sum=0.0;  //store sum as a 32-bit number
   for(int i=0;i<n;i++)
   {
-    //float value = analogRead(pin);
     float value = ads.readADC_SingleEnded(pin);
     sum = sum + value;
     delay(1); // makes readings slower - probably don't need this delay, but ¯\_(ツ)_/¯
@@ -358,7 +389,7 @@ float resistance(float adc, int true_R)
 {
   //float R = true_R/(1023.0/adc-1.0);   // convert 10-bit reading into resistance
   float ADCvalue = adc*(8.192/3.3);  // Vcc = 8.192 on GAIN_ONE setting, Arduino Vcc = 3.3V in this case
-  float R = 10000/(65535/ADCvalue-1);  // 65535 refers to 16-bit number
+  float R = true_R/(65535/ADCvalue-1);  // 65535 refers to 16-bit number
   return R;
 }
 
@@ -372,42 +403,42 @@ float steinhart(float R)
   float E = log(R);
   
   float T = 1/(A + (B*E) + (C*(E*E*E)) + (D*(E*E*E*E*E)));
-  
-  return T-273.15;
+  T -= 273.15;
+  return T;
 }
-// Get temperature from Steinhart equation (US sensors thermistor, 10K, B = 3892) *****************************************
+
+// Get temperature from Steinhart equation (10K Precision Epoxy Thermistor - 3950 NTC) *****************
 float steinhart2(float R)
 {
-  float st;
-  st = R / 10000;
-  st = log(st);                  
-  st /= 3950;                   
-  st += 1.0 / (25 + 273.15);
-  st = 1.0 / st;        
-  st -= 273.15;
-
-  return st;
+  float steinhart;
+  steinhart = R / 10000;     // (R/Ro)
+  steinhart = log(steinhart);                  // ln(R/Ro)
+  steinhart /= 3950.0;                   // 1/B * ln(R/Ro)
+  steinhart += 1.0 / (25.0 + 273.15); // + (1/To)
+  steinhart = 1.0 / steinhart;                 // Invert
+  steinhart -= 273.15;                         // convert to C
+  return steinhart;
 }
 
   
-
 // Get CO2 reading from S8 sensor ****************************************************************
-void sendRequest(byte packet[])
+long getCO2(byte packet[])
 {
-  while(!K_30_Serial.available())  //keep sending request until we start to get a response
+  co2_serial.listen();
+  while(!co2_serial.available())  //keep sending request until we start to get a response
   {
-    K_30_Serial.write(readCO2,7);
+    co2_serial.write(readCO2,7);
     delay(10);
   }
   
   int timeout=0;  //set a timeoute counter
-  while(K_30_Serial.available() < 7 ) //Wait to get a 7 byte response
+  while(co2_serial.available() < 7 ) //Wait to get a 7 byte response
   {
     timeout++;  
     if(timeout > 10)    //if it takes to long there was probably an error
       {
-        while(K_30_Serial.available())  //flush whatever we have
-          K_30_Serial.read();
+        while(co2_serial.available())  //flush whatever we have
+          co2_serial.read();
           
           break;                        //exit and try again
       }
@@ -416,21 +447,45 @@ void sendRequest(byte packet[])
   
   for (int i=0; i < 7; i++)
   {
-    response[i] = K_30_Serial.read();
-  }  
-}
-
-unsigned long getValue(byte packet[])
-{
-    int high = packet[3];                        //high byte for value is 4th byte in packet in the packet
-    int low = packet[4];                         //low byte for value is 5th byte in the packet
-
+    response[i] = co2_serial.read();
+  }
   
-    unsigned long val = high*256 + low;                //Combine high byte and low byte with this formula to get value
-    return val* valMultiplier;
+  int high = response[3];                        //high byte for value is 4th byte in packet in the packet
+  int low = response[4];                         //low byte for value is 5th byte in the packet
+  long val = (high*256) + low;                //Combine high byte and low byte with this formula to get value
+  return val * valMultiplier;
 }
 
+// Get voltage ****************************************************************
+float voltage(float _adc, int _gain)
+{
+  float V;
+  switch(_gain)
+  {
+    case 0:  // default 2/3x gain setting for +/- 6.144 V
+      V = _adc * 0.0001875;
+      break;
+    case 1:  // 1x gain setting for +/- 4.096 V
+      V = _adc * 0.000125;
+      break;
+    case 2:  // 2x gain setting for +/- 2.048 V
+      V = _adc * 0.0000625;
+      break;
+    case 3:  // 4x gain setting for +/- 1.024 V
+      V = _adc * 0.00003125;
+      break;
+    case 4:  // 8x gain setting for +/- 0.512 V
+      V = _adc * 0.000015625;
+      break;
+    case 5:  // 16x gain setting for +/- 0.256 V
+      V = _adc * 0.0000078125;
+      break;
 
+    default:
+      V = 0.0;
+  }
+  return V;
+}
 
 // Fill the dots one after the other with a color***********************************************
 void colorWipe(uint32_t c, uint8_t wait) {
