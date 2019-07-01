@@ -7369,7 +7369,6 @@ BKH1005LM152-T - 1.5K Ohm, 200mA Ferrite Chip - Digikey: 587-3216-1-ND&lt;/li&gt
 </part>
 <part name="SUPPLY21" library="SparkFun-Aesthetics" deviceset="VCC" device=""/>
 <part name="GND15" library="SparkFun-Aesthetics" deviceset="GND" device=""/>
-<part name="U$7" library="adafruit" deviceset="FIDUCIAL" device=""/>
 <part name="SW1" library="adafruit" deviceset="SPST_TACT" device="-KMR2"/>
 <part name="U14" library="SenseAir S8" deviceset="SENSEAIR_S8" device=""/>
 <part name="U$9" library="microbuilder" deviceset="GND" device=""/>
@@ -7483,7 +7482,7 @@ Relative Humidity</text>
 <text x="245.872" y="-79.756" size="5.08" layer="94" font="vector" ratio="20">Element Pro</text>
 <text x="257.302" y="-112.522" size="2.54" layer="94" font="vector" ratio="10">Akram Ali</text>
 <text x="134.62" y="-30.48" size="2.54" layer="94" font="vector">USB + FTDI</text>
-<text x="257.556" y="-102.362" size="2.54" layer="94" font="vector" ratio="10">0.3</text>
+<text x="257.556" y="-102.362" size="2.54" layer="94" font="vector" ratio="10">0.4</text>
 <text x="246.126" y="-84.582" size="2.54" layer="94" font="vector" ratio="10">github.com/akstudios</text>
 <text x="160.02" y="101.6" size="1.778" layer="97" font="vector">0x29</text>
 <text x="208.28" y="76.2" size="2.54" layer="94" font="vector">RGB LED</text>
@@ -7594,8 +7593,8 @@ Thermistor</text>
 <instance part="GND10" gate="1" x="127" y="-96.52" smashed="yes">
 <attribute name="VALUE" x="124.46" y="-99.06" size="1.778" layer="96"/>
 </instance>
-<instance part="H1" gate="G$1" x="220.98" y="-96.52" smashed="yes"/>
-<instance part="H2" gate="G$1" x="231.14" y="-96.52" smashed="yes"/>
+<instance part="H1" gate="G$1" x="223.52" y="-96.52" smashed="yes"/>
+<instance part="H2" gate="G$1" x="223.52" y="-101.6" smashed="yes"/>
 <instance part="FRAME1" gate="G$1" x="-71.12" y="-116.84" smashed="yes">
 <attribute name="DRAWING_NAME" x="248.031" y="-97.409" size="2.54" layer="94" font="vector"/>
 <attribute name="LAST_DATE_TIME" x="238.633" y="-107.315" size="2.286" layer="94" font="vector"/>
@@ -7651,7 +7650,7 @@ Thermistor</text>
 <instance part="SUPPLY3" gate="G$1" x="264.16" y="78.74" smashed="yes">
 <attribute name="VALUE" x="263.144" y="82.296" size="1.778" layer="96"/>
 </instance>
-<instance part="H3" gate="G$1" x="226.06" y="-96.52" smashed="yes"/>
+<instance part="H3" gate="G$1" x="231.14" y="-96.52" smashed="yes"/>
 <instance part="TC1" gate="A" x="-35.56" y="109.22" smashed="yes" rot="R180">
 <attribute name="VALUE" x="-31.75" y="116.84" size="1.778" layer="96" rot="R180"/>
 <attribute name="NAME" x="-31.75" y="103.378" size="1.778" layer="95" rot="R180"/>
@@ -7821,7 +7820,6 @@ Thermistor</text>
 <instance part="GND15" gate="1" x="88.9" y="40.64" smashed="yes">
 <attribute name="VALUE" x="86.36" y="38.1" size="1.778" layer="96"/>
 </instance>
-<instance part="U$7" gate="G$1" x="223.52" y="-101.6" smashed="yes"/>
 <instance part="SW1" gate="G$1" x="86.36" y="48.26" smashed="yes">
 <attribute name="NAME" x="80.01" y="45.72" size="1.778" layer="95" rot="R90"/>
 <attribute name="VALUE" x="77.47" y="46.355" size="1.778" layer="96" rot="R90"/>
