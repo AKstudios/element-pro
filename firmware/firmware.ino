@@ -1,5 +1,5 @@
-// Element Pro Firmware v0.3
-// Modified: 06/28/2019
+// Element Pro Firmware v0.4
+// Modified: 07/10/2019
 
 // Developed by Akram Ali
 // github.com/akstudios
@@ -199,14 +199,12 @@ void readSensors()
   sht31.begin(0x44);
   float temp = sht31.readTemperature();
   float rh = sht31.readHumidity();  // taking temp reading is important for rh reading
-  //temp = temp - 1.5;
-  //rh = rh + 5.0;
 
   // ADS1115 16-bit ADC
   ads.setGain(gain[1]);  // this is only for temperature sensor
   adc16 = samples(0);   // get avg ADC value from channel 0 
   float R = resistance(adc16, 10000); // Replace 10,000 ohm with the actual resistance of the resistor measured using a multimeter (e.g. 9880 ohm)
-  temp = steinhart(R);  // get temperature from thermistor using the custom Steinhart-hart equation by US sensors
+  float a = steinhart(R);  // get air temperature from thermistor using the custom Steinhart-hart equation by US sensors
 
   // external voltage - 10K-10K voltage divider
   adc16 = ads_autogain(3);   // get avg ADC value from channel 3 
@@ -240,7 +238,7 @@ void readSensors()
 
   // PMS7003
   digitalWrite(PM_SET, HIGH); // turn PM sensor on
-  delay(2000);  // wait a few seconds for air to flow through PM sensor
+  delay(3000);  // wait a few seconds for air to flow through PM sensor
   long pm;
   pm_serial.listen();
   delay(1);
@@ -261,6 +259,7 @@ void readSensors()
   char _i[3];
   char _t[7];
   char _h[7];
+  char _a[7];
   char _c[7];
   char _o[7];
   char _g[7];
@@ -275,6 +274,7 @@ void readSensors()
   dtostrf(NODEID, 1, 0, _i);
   dtostrf(temp, 3, 2, _t);  // this function converts float into char array. 3 is minimum width, 2 is decimal precision
   dtostrf(rh, 3, 2, _h);
+  dtostrf(a, 3, 2, _a);
   dtostrf(co2, 1, 0, _c);
   dtostrf(bar, 3, 2, _g);
   dtostrf(lux, 1, 0, _l);
@@ -292,6 +292,8 @@ void readSensors()
   strcat(dataPacket, _t);
   strcat(dataPacket, ",h:");
   strcat(dataPacket, _h);
+  strcat(dataPacket, ",a:");
+  strcat(dataPacket, _a);
   strcat(dataPacket, ",c:");
   strcat(dataPacket, _c);
   strcat(dataPacket, ",g:");
